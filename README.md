@@ -2,9 +2,36 @@
 
 MCP (Model Context Protocol) server for VTP - deploy apps via Claude Code.
 
-## Installation
+## Quick Start
 
-Add to your Claude Code configuration (`~/.claude.json`):
+Run the installer to automatically configure your AI coding assistant:
+
+```bash
+npx myvtp-mcp install
+```
+
+This will detect and configure any of the following clients:
+- **Claude Desktop** - Anthropic's desktop app
+- **Claude Code** - Anthropic's CLI tool
+- **Cursor** - AI-powered code editor
+- **VS Code** - Project-level MCP config
+- **Windsurf** - Codeium's AI code editor
+- **Project (.mcp.json)** - Generic project-level config
+
+### Installer Options
+
+```bash
+npx myvtp-mcp install              # Interactive mode
+npx myvtp-mcp install --yes        # Configure all detected clients
+npx myvtp-mcp install --yes claude-desktop  # Configure specific client
+npx myvtp-mcp install --force      # Overwrite existing VTP config
+```
+
+Press **Escape** or **Ctrl+C** to cancel the installer.
+
+## Manual Installation
+
+Add to your MCP configuration file:
 
 ```json
 {
@@ -17,9 +44,21 @@ Add to your Claude Code configuration (`~/.claude.json`):
 }
 ```
 
+### Config File Locations
+
+| Client | Config Path |
+|--------|-------------|
+| Claude Desktop (macOS) | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| Claude Desktop (Windows) | `%APPDATA%\Claude\claude_desktop_config.json` |
+| Claude Code | `~/.claude.json` |
+| Cursor | `~/.cursor/mcp.json` |
+| VS Code | `.vscode/mcp.json` (project-level) |
+| Windsurf | `~/.codeium/windsurf/mcp_config.json` |
+| Generic | `.mcp.json` (project-level) |
+
 ## Usage
 
-Once configured, simply ask Claude Code to deploy your app:
+Once configured, simply ask Claude to deploy your app:
 
 ```
 Deploy this app to VTP

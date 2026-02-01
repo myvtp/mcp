@@ -32,9 +32,11 @@
   },
   "homepage": "https://github.com/myvtp/mcp#readme",
   "dependencies": {
+    "@inquirer/prompts": "^7.0.0",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "form-data": "^4.0.0",
     "ignore": "^7.0.5",
+    "picocolors": "^1.1.0",
     "tar": "^7.5.7",
     "yaml": "^2.8.2",
     "zod": "^3.22.4"
