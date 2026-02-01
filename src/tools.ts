@@ -1,0 +1,118 @@
+import { z } from 'zod';
+
+// Tool parameter schemas
+export const DeploySchema = z.object({
+  config: z.string().optional().describe('Path to vtp.yaml (default: ./vtp.yaml)'),
+  force: z.boolean().optional().describe('Replace existing app with same name'),
+});
+
+export const GuideTypeSchema = z.object({
+  type: z.string().describe('App type from list_app_types (e.g., "nextjs", "spa", "node")'),
+});
+
+// Tool definitions for MCP
+export const toolDefinitions = [
+  {
+    name: 'list_app_types',
+    description: `List supported app types for deployment.
+
+DEPLOYMENT WORKFLOW (all steps required):
+1. list_app_types → identify your app type
+2. get_deployment_guide → ALWAYS call this before deploy, even if vtp.yaml exists
+3. list → check if app already exists (redeploy vs new)
+4. Review files in deploy path, add 'ignore' to vtp.yaml for files not needed at runtime
+5. deploy → deploy the app
+
+After identifying the type, call get_deployment_guide to get the vtp.yaml template.`,
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  {
+    name: 'get_deployment_guide',
+    description: `Get deployment instructions and vtp.yaml template for an app type.
+
+MANDATORY: Call this before EVERY deployment - even if vtp.yaml already exists.
+This ensures your configuration matches the latest requirements.
+
+Returns a vtp.yaml template with 'predeploy' commands that automatically handle:
+- Building the app (npm run build, etc.)
+- Copying assets (for Next.js standalone, etc.)
+
+CRITICAL FOR NODE APPS: Before creating vtp.yaml, check if the app uses SQLite or writes files:
+- Look for: better-sqlite3, sql.js, sqlite3, prisma with SQLite, fs.writeFile to data files
+- If found: You MUST add 'volumes' config AND update the app to use the volume path
+- Without volumes, all data is lost on every redeployment
+
+Copy the vtp.yaml template, adjust the app name, then call deploy.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        type: {
+          type: 'string',
+          description: 'App type from list_app_types (e.g., "nextjs", "spa", "node")',
+        },
+      },
+      required: ['type'],
+    },
+  },
+  {
+    name: 'deploy',
+    description: `PREREQUISITES (complete ALL before deploying):
+1. Call get_deployment_guide to verify vtp.yaml config (even if it already exists)
+2. Call list to check if this app already exists (redeploy vs new deployment)
+3. Review files in deploy path - add 'ignore' to vtp.yaml for files not needed at runtime
+
+Deploy a web app to VTP.
+
+The vtp.yaml 'predeploy' commands run automatically before packaging.
+You do NOT need to manually run build commands - predeploy handles it.
+
+REQUIRED: vtp.yaml with:
+  name: My App Name          # Display name (shown in dashboard)
+  id: my-app                 # Optional: URL slug (auto-generated from name if omitted)
+  description: Brief description of the app
+  type: static|node
+  path: ./dist
+  predeploy: npm run build   # Runs automatically!
+  ignore:                    # Exclude unnecessary files
+    - node_modules           # ALWAYS exclude - reinstalled in container
+    - src                    # Source files if deploying compiled output
+
+NAME vs ID:
+- name: Human-friendly display name (e.g., "My Budget Tracker")
+- id: URL-safe identifier used for: https://{id}.{user}.myvtp.dev, container name, volumes
+       If omitted, auto-generated from name: "My Budget Tracker" → "my-budget-tracker"
+       Rules: lowercase, letters/numbers/hyphens only, max 63 chars
+
+CRITICAL - FOR APPS WITH DATABASES OR FILE STORAGE:
+You MUST add volumes or data will be lost on redeploy:
+  volumes:
+    data: /app/data
+AND update the app code to write to the volume path (e.g., /app/data/app.db)
+
+FILE EXCLUSION:
+- .env files and .git are excluded automatically (security)
+- .gitignore patterns are respected if the file exists
+- Add 'ignore' in vtp.yaml for anything else not needed at runtime`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        config: { type: 'string', description: 'Path to vtp.yaml (default: ./vtp.yaml)' },
+        force: { type: 'boolean', description: 'Replace existing app with same id' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'list',
+    description: `List all deployed apps with their status and URLs.
+
+Call this before deploying to check if the app already exists (redeploy requires force flag).`,
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+];
