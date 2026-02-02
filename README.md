@@ -7,7 +7,7 @@ MCP (Model Context Protocol) server for VTP - deploy apps via Claude Code.
 Run the installer to automatically configure your AI coding assistant:
 
 ```bash
-npx myvtp-mcp install
+npx @myvtp/mcp install
 ```
 
 This will detect and configure any of the following clients:
@@ -21,10 +21,10 @@ This will detect and configure any of the following clients:
 ### Installer Options
 
 ```bash
-npx myvtp-mcp install              # Interactive mode
-npx myvtp-mcp install --yes        # Configure all detected clients
-npx myvtp-mcp install --yes claude-desktop  # Configure specific client
-npx myvtp-mcp install --force      # Overwrite existing VTP config
+npx @myvtp/mcp install              # Interactive mode
+npx @myvtp/mcp install --yes        # Configure all detected clients
+npx @myvtp/mcp install --yes claude-desktop  # Configure specific client
+npx @myvtp/mcp install --force      # Overwrite existing VTP config
 ```
 
 Press **Escape** or **Ctrl+C** to cancel the installer.

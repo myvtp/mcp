@@ -3,8 +3,8 @@
  * VTP MCP Package Entry Point
  *
  * Routes to either the MCP server or the install command based on arguments:
- * - `npx myvtp-mcp` or `npx -y @myvtp/mcp` → runs the MCP server
- * - `npx myvtp-mcp install` → runs the installer
+ * - `npx @myvtp/mcp` or `npx -y @myvtp/mcp` → runs the MCP server
+ * - `npx @myvtp/mcp install` → runs the installer
  */
 
 const args = process.argv.slice(2);
