@@ -23,7 +23,9 @@ DEPLOYMENT WORKFLOW (all steps required):
 4. Review files in deploy path, add 'ignore' to vtp.yaml for files not needed at runtime
 5. deploy → deploy the app
 
-After identifying the type, call get_deployment_guide to get the vtp.yaml template.`,
+After identifying the type, call get_deployment_guide to get the vtp.yaml template.
+
+MULTI-TENANCY: If the app needs per-user data or personalisation, also call get_deployment_guide with type="multi-tenancy" to learn about VTP's automatic user identity headers.`,
     inputSchema: {
       type: 'object',
       properties: {},
@@ -95,7 +97,20 @@ AND update the app code to write to the volume path (e.g., /app/data/app.db)
 FILE EXCLUSION:
 - .env files and .git are excluded automatically (security)
 - .gitignore patterns are respected if the file exists
-- Add 'ignore' in vtp.yaml for anything else not needed at runtime`,
+- Add 'ignore' in vtp.yaml for anything else not needed at runtime
+
+MULTI-TENANCY (automatic user identity):
+VTP injects the authenticated user's identity into every request via headers:
+- X-VTP-User: Unique user ID (use as database foreign key)
+- X-VTP-Email: User's email address
+- X-VTP-Slug: URL-safe username
+- X-VTP-User-Name: Display name for UI
+- X-VTP-Role: 'user' or 'admin'
+
+To build multi-tenant apps, read these headers and use X-VTP-User as the owner key for all data.
+No authentication code needed - VTP handles login automatically.
+
+For detailed examples (Express, Next.js, Hono, database patterns), call get_deployment_guide with type="multi-tenancy".`,
     inputSchema: {
       type: 'object',
       properties: {
