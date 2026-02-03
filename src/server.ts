@@ -11,7 +11,7 @@ import {
 import { existsSync } from 'fs';
 
 import * as client from './client.js';
-import { DeploySchema, GuideTypeSchema, toolDefinitions } from './tools.js';
+import { DeploySchema, GetLogsSchema, GuideTypeSchema, toolDefinitions } from './tools.js';
 
 const server = new Server(
   {
@@ -131,13 +131,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         // Success
         const app = result.app!;
         const prefix = result.replaced ? 'Replaced' : 'Deployed';
+        let responseText = `${prefix} ${app.name} (@${app.id})\n` +
+                           `  URL: ${app.url}\n` +
+                           `  Type: ${app.type}\n` +
+                           `  Status: ${app.status}`;
+
+        // Include warning if app wasn't started due to missing connections
+        if (result.warning) {
+          responseText += `\n\n⚠️ WARNING: ${result.warning}`;
+        }
+
         return {
           content: [{
             type: 'text',
-            text: `${prefix} ${app.name} (@${app.id})\n` +
-                  `  URL: ${app.url}\n` +
-                  `  Type: ${app.type}\n` +
-                  `  Status: ${app.status}`,
+            text: responseText,
           }],
         };
       }
@@ -205,6 +212,27 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                   `\`\`\`\n\n` +
                   `The user must configure API keys at their VTP dashboard before deploying.\n` +
                   `Environment variables are injected as: {PREFIX}_{FIELD} (e.g., OPENAI_API_KEY)`,
+          }],
+        };
+      }
+
+      case 'get_logs': {
+        const { app_id, lines } = GetLogsSchema.parse(args);
+        const logs = await client.getAppLogs(app_id, lines);
+
+        if (!logs || logs.trim() === '') {
+          return {
+            content: [{
+              type: 'text',
+              text: `No logs available for app '${app_id}'. The app may not have produced any output yet.`,
+            }],
+          };
+        }
+
+        return {
+          content: [{
+            type: 'text',
+            text: `Logs for ${app_id}:\n\n${logs}`,
           }],
         };
       }

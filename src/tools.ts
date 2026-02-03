@@ -10,6 +10,11 @@ export const GuideTypeSchema = z.object({
   type: z.string().describe('App type from list_app_types (e.g., "nextjs", "spa", "node")'),
 });
 
+export const GetLogsSchema = z.object({
+  app_id: z.string().describe('The app ID (use "list" to see deployed apps)'),
+  lines: z.number().optional().describe('Number of log lines to retrieve (default: 100)'),
+});
+
 // Tool definitions for MCP
 export const toolDefinitions = [
   {
@@ -161,6 +166,31 @@ Returns: Service IDs, names, descriptions, required fields, and documentation UR
     inputSchema: {
       type: 'object',
       properties: {},
+    },
+  },
+  {
+    name: 'get_logs',
+    description: `Get container logs for a deployed app.
+
+Use this to debug issues with deployed apps. Returns the most recent log output from the app's container.
+
+TROUBLESHOOTING WORKFLOW:
+1. list → find the app ID
+2. get_logs with the app ID → view recent logs
+3. Analyse errors and suggest fixes
+
+Examples of issues you can diagnose:
+- App startup failures
+- Runtime errors and exceptions
+- Connection issues (database, API keys)
+- Missing environment variables`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        app_id: { type: 'string', description: 'The app ID (use "list" to see deployed apps)' },
+        lines: { type: 'number', description: 'Number of log lines to retrieve (default: 100, max: 1000)' },
+      },
+      required: ['app_id'],
     },
   },
 ];

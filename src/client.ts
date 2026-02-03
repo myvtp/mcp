@@ -53,6 +53,7 @@ export interface App {
 export interface DeployResult {
   app?: App;
   replaced?: boolean;
+  warning?: string;
   error?: string;
   message?: string;
   existingApp?: App;
@@ -624,4 +625,13 @@ async function postDeploy(
 export async function listConnectionServices(): Promise<ConnectionService[]> {
   const response = await apiRequest<{ services: ConnectionService[] }>('GET', '/connections/services');
   return response.services;
+}
+
+/**
+ * Get container logs for a deployed app.
+ */
+export async function getAppLogs(appId: string, lines?: number): Promise<string> {
+  const params = lines ? `?lines=${lines}` : '';
+  const response = await apiRequest<{ logs: string }>('GET', `/apps/${encodeURIComponent(appId)}/logs${params}`);
+  return response.logs;
 }
