@@ -19,11 +19,14 @@ export const toolDefinitions = [
 DEPLOYMENT WORKFLOW (all steps required):
 1. list_app_types → identify your app type
 2. get_deployment_guide → ALWAYS call this before deploy, even if vtp.yaml exists
-3. list → check if app already exists (redeploy vs new)
-4. Review files in deploy path, add 'ignore' to vtp.yaml for files not needed at runtime
-5. deploy → deploy the app
+3. list_supported_connections → if app uses API keys (OpenAI, Anthropic, TMDB, etc.)
+4. list → check if app already exists (redeploy vs new)
+5. Review files in deploy path, add 'ignore' to vtp.yaml for files not needed at runtime
+6. deploy → deploy the app
 
 After identifying the type, call get_deployment_guide to get the vtp.yaml template.
+
+API KEYS: If the app uses third-party APIs (OpenAI, Anthropic, etc.), call list_supported_connections to see available services. Use 'connections' in vtp.yaml instead of hardcoding keys in 'env'.
 
 MULTI-TENANCY: If the app needs per-user data or personalisation, also call get_deployment_guide with type="multi-tenancy" to learn about VTP's automatic user identity headers.`,
     inputSchema: {
@@ -99,6 +102,16 @@ FILE EXCLUSION:
 - .gitignore patterns are respected if the file exists
 - Add 'ignore' in vtp.yaml for anything else not needed at runtime
 
+API KEYS & SECRETS (OpenAI, Anthropic, TMDB, etc.):
+Use 'connections' instead of hardcoding API keys in 'env':
+  connections:
+    - openai      # Injects OPENAI_API_KEY automatically
+    - anthropic   # Injects ANTHROPIC_API_KEY automatically
+    - tmdb        # Injects TMDB_API_KEY automatically
+
+User must configure keys at https://home.myvtp.app/profile/connections before the app can start.
+Call list_supported_connections to see all available services.
+
 MULTI-TENANCY (automatic user identity):
 VTP injects the authenticated user's identity into every request via headers:
 - X-VTP-User: Unique user ID (use as database foreign key)
@@ -125,6 +138,26 @@ For detailed examples (Express, Next.js, Hono, database patterns), call get_depl
     description: `List all deployed apps with their status and URLs.
 
 Call this before deploying to check if the app already exists (redeploy requires force flag).`,
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  {
+    name: 'list_supported_connections',
+    description: `List available third-party service connections that VTP apps can use.
+
+This shows services like OpenAI, Anthropic, and Gemini that users can connect to their VTP account.
+Apps declare required connections in vtp.yaml and receive credentials as environment variables at runtime.
+
+Example vtp.yaml usage:
+  connections:
+    - openai
+    - anthropic
+
+The user must configure their API keys at https://home.myvtp.app/profile/connections before the app can start.
+
+Returns: Service IDs, names, descriptions, required fields, and documentation URLs.`,
     inputSchema: {
       type: 'object',
       properties: {},

@@ -70,6 +70,24 @@ export interface DeploymentGuide extends AppTypeInfo {
   content: string;
 }
 
+export interface ConnectionField {
+  name: string;
+  label: string;
+  type: 'secret' | 'text';
+  required: boolean;
+  placeholder?: string;
+  helpText?: string;
+}
+
+export interface ConnectionService {
+  id: string;
+  name: string;
+  description: string;
+  envPrefix: string;
+  docsUrl: string;
+  fields: ConnectionField[];
+}
+
 interface VTPConfig {
   id?: string;       // URL-safe identifier (auto-generated from name if omitted)
   name: string;      // Display name (required)
@@ -381,11 +399,20 @@ async function apiRequest<T>(
   }
 }
 
+interface AppsResponse {
+  owned: App[];
+  shared: App[];
+  installed: App[];
+  subscribed: App[];
+}
+
 /**
- * List all deployed apps.
+ * List all deployed apps (owned by the current user).
  */
 export async function listApps(): Promise<App[]> {
-  return apiRequest('GET', '/apps');
+  const response = await apiRequest<AppsResponse>('GET', '/apps');
+  // Return only owned apps for MCP (the user's deployed apps)
+  return response.owned || [];
 }
 
 /**
@@ -589,4 +616,12 @@ async function postDeploy(
       }
     );
   });
+}
+
+/**
+ * List available connection services.
+ */
+export async function listConnectionServices(): Promise<ConnectionService[]> {
+  const response = await apiRequest<{ services: ConnectionService[] }>('GET', '/connections/services');
+  return response.services;
 }

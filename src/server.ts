@@ -169,6 +169,46 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
+      case 'list_supported_connections': {
+        const services = await client.listConnectionServices();
+
+        const serviceList = services
+          .map(service => {
+            const requiredFields = service.fields
+              .filter(f => f.required)
+              .map(f => f.name)
+              .join(', ');
+            const optionalFields = service.fields
+              .filter(f => !f.required)
+              .map(f => f.name);
+            const optionalText = optionalFields.length > 0
+              ? `\n    Optional: ${optionalFields.join(', ')}`
+              : '';
+
+            return `- **${service.name}** (${service.id})\n` +
+                   `    ${service.description}\n` +
+                   `    Env prefix: ${service.envPrefix}_\n` +
+                   `    Required: ${requiredFields}${optionalText}\n` +
+                   `    Docs: ${service.docsUrl}`;
+          })
+          .join('\n\n');
+
+        return {
+          content: [{
+            type: 'text',
+            text: `Available connection services:\n\n${serviceList}\n\n` +
+                  `**Usage in vtp.yaml:**\n` +
+                  `\`\`\`yaml\n` +
+                  `connections:\n` +
+                  `  - openai\n` +
+                  `  - anthropic\n` +
+                  `\`\`\`\n\n` +
+                  `The user must configure API keys at their VTP dashboard before deploying.\n` +
+                  `Environment variables are injected as: {PREFIX}_{FIELD} (e.g., OPENAI_API_KEY)`,
+          }],
+        };
+      }
+
       default:
         return {
           content: [{
