@@ -3,10 +3,8 @@ import { readFile, readdir, stat } from 'fs/promises';
 import { join } from 'path';
 
 /**
- * Patterns that are ALWAYS excluded for security.
+ * Patterns that are ALWAYS excluded for security and efficiency.
  * These apply even if no .gitignore exists.
- *
- * Keep this list minimal - users control other exclusions via .gitignore.
  */
 const ALWAYS_IGNORED = [
   // Environment files (secrets) - ALWAYS excluded
@@ -17,6 +15,22 @@ const ALWAYS_IGNORED = [
 
   // Version control - never needed in deployment
   '.git',
+
+  // Build outputs - builds happen server-side now
+  // Excluding these prevents uploading large build artifacts
+  '.next',           // Next.js build output
+  '.output',         // Nuxt 3 / Nitro output
+  '.svelte-kit',     // SvelteKit build output
+  '.nuxt',           // Nuxt build cache
+  '.astro',          // Astro build cache
+  'dist',            // Common build output
+  'build',           // Common build output (CRA, etc.)
+  'out',             // Next.js static export
+  '.vercel',         // Vercel build output
+  '.netlify',        // Netlify build output
+
+  // Dependencies - will be installed server-side
+  'node_modules',
 ];
 
 /**

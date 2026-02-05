@@ -11,7 +11,7 @@ import {
 import { existsSync } from 'fs';
 
 import * as client from './client.js';
-import { DeploySchema, GetLogsSchema, GuideTypeSchema, toolDefinitions } from './tools.js';
+import { DeploySchema, GetLogsSchema, GetAppConfigSchema, GuideTypeSchema, DetectFrameworkSchema, toolDefinitions } from './tools.js';
 
 const server = new Server(
   {
@@ -22,6 +22,12 @@ const server = new Server(
     capabilities: {
       tools: {},
     },
+    instructions: `VTP (Vibe Transfer Protocol) is a personal app hosting platform designed for AI agents to deploy web apps on behalf of users.
+
+YOUR RESPONSIBILITY AS THE AGENT:
+You orchestrate the deployment process. The end user should not need to understand DevOps, infrastructure, or deployment details - that complexity is your job to handle.
+
+IMPORTANT: Call the \`how_to_deploy\` tool to get the deployment workflow before deploying any app. Never guess or assume configuration - use the tools to get accurate, current information.`,
   }
 );
 
@@ -36,6 +42,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   try {
     switch (name) {
+      case 'how_to_deploy': {
+        const workflow = await client.getWorkflow();
+        return {
+          content: [{
+            type: 'text',
+            text: workflow,
+          }],
+        };
+      }
+
       case 'list_app_types': {
         const types = await client.listAppTypes();
 
@@ -90,10 +106,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               type: 'text',
               text: `Error: Config file not found: ${configPath}\n\n` +
                     `Create a vtp.yaml file with:\n` +
-                    `  name: My App Name      # Display name\n` +
-                    `  id: my-app             # Optional: URL slug\n` +
-                    `  type: static           # or "node"\n` +
-                    `  path: ./dist           # folder to deploy\n\n` +
+                    `  name: My App Name      # Display name (required)\n` +
+                    `  description: Brief description of the app\n\n` +
+                    `VTP auto-detects your framework and builds server-side.\n` +
                     `Use list_app_types and get_deployment_guide for help.`,
             }],
             isError: true,
@@ -176,6 +191,46 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
+      case 'get_app_config': {
+        const { app_id } = GetAppConfigSchema.parse(args);
+        const config = await client.getAppConfig(app_id);
+
+        if (!config) {
+          return {
+            content: [{
+              type: 'text',
+              text: `No config found for app '${app_id}'. The app may not exist or its container has been removed.`,
+            }],
+            isError: true,
+          };
+        }
+
+        // Format config as YAML-like output for readability
+        const formatValue = (v: unknown): string => {
+          if (Array.isArray(v)) {
+            return v.map(item => `\n  - ${item}`).join('');
+          }
+          if (typeof v === 'object' && v !== null) {
+            return '\n' + Object.entries(v)
+              .map(([k, val]) => `  ${k}: ${val}`)
+              .join('\n');
+          }
+          return String(v);
+        };
+
+        const configLines = Object.entries(config)
+          .filter(([_, v]) => v !== undefined && v !== null)
+          .map(([k, v]) => `${k}: ${formatValue(v)}`)
+          .join('\n');
+
+        return {
+          content: [{
+            type: 'text',
+            text: `Config for ${app_id}:\n\n\`\`\`yaml\n${configLines}\n\`\`\`\n\nUse this to recreate vtp.yaml for redeployment.`,
+          }],
+        };
+      }
+
       case 'list_supported_connections': {
         const services = await client.listConnectionServices();
 
@@ -233,6 +288,97 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [{
             type: 'text',
             text: `Logs for ${app_id}:\n\n${logs}`,
+          }],
+        };
+      }
+
+      case 'detect_framework': {
+        const { path: projectPath } = DetectFrameworkSchema.parse(args);
+        const sourcePath = projectPath || '.';
+
+        // Validate path exists
+        if (!existsSync(sourcePath)) {
+          return {
+            content: [{
+              type: 'text',
+              text: `Error: Path does not exist: ${sourcePath}`,
+            }],
+            isError: true,
+          };
+        }
+
+        // Detect framework via API
+        const result = await client.detectFramework(sourcePath);
+
+        // Format the response
+        let responseText = `## Framework Detection Results\n\n`;
+        responseText += `**Framework:** ${result.detection.framework}`;
+        if (result.detection.mode) {
+          responseText += ` (${result.detection.mode})`;
+        }
+        responseText += `\n**Confidence:** ${result.detection.confidence}\n`;
+        responseText += `**Package Manager:** ${result.detection.packageManager}\n`;
+
+        if (result.detection.nodeVersion) {
+          responseText += `**Node Version:** ${result.detection.nodeVersion}\n`;
+        }
+        if (result.detection.buildCommand) {
+          responseText += `**Build Command:** ${result.detection.buildCommand}\n`;
+        }
+        if (result.detection.outputDir) {
+          responseText += `**Output Directory:** ${result.detection.outputDir}\n`;
+        }
+        if (result.detection.startCommand) {
+          responseText += `**Start Command:** ${result.detection.startCommand}\n`;
+        }
+        if (result.detection.defaultPort) {
+          responseText += `**Default Port:** ${result.detection.defaultPort}\n`;
+        }
+
+        // Validation results
+        responseText += `\n## Validation\n\n`;
+        responseText += `**Valid:** ${result.validation.valid ? 'Yes' : 'No'}\n`;
+
+        if (result.validation.errors.length > 0) {
+          responseText += `\n### Errors\n`;
+          for (const err of result.validation.errors) {
+            responseText += `- **${err.code}:** ${err.message}`;
+            if (err.suggestion) {
+              responseText += `\n  💡 ${err.suggestion}`;
+            }
+            responseText += `\n`;
+          }
+        }
+
+        if (result.validation.warnings.length > 0) {
+          responseText += `\n### Warnings\n`;
+          for (const warn of result.validation.warnings) {
+            responseText += `- **${warn.code}:** ${warn.message}`;
+            if (warn.suggestion) {
+              responseText += `\n  💡 ${warn.suggestion}`;
+            }
+            responseText += `\n`;
+          }
+        }
+
+        // Detection warnings
+        if (result.detection.warnings && result.detection.warnings.length > 0) {
+          responseText += `\n### Detection Notes\n`;
+          for (const warn of result.detection.warnings) {
+            responseText += `- ${warn}\n`;
+          }
+        }
+
+        // Existing vtp.yaml config
+        if (result.vtpConfig) {
+          responseText += `\n## Existing vtp.yaml\n\n`;
+          responseText += `\`\`\`yaml\n${JSON.stringify(result.vtpConfig, null, 2)}\n\`\`\`\n`;
+        }
+
+        return {
+          content: [{
+            type: 'text',
+            text: responseText,
           }],
         };
       }

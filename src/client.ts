@@ -9,6 +9,7 @@ import { parse as parseYaml } from 'yaml';
 import * as tar from 'tar';
 import { getFilesToInclude } from './utils/ignoreFilter.js';
 
+// Used for opening browser during auth flow
 const execAsync = promisify(exec);
 
 const API_BASE = process.env.VTP_API_URL || 'https://api.myvtp.app';
@@ -89,18 +90,28 @@ export interface ConnectionService {
   fields: ConnectionField[];
 }
 
+/**
+ * VTP configuration schema (v2) - minimal config with server-side builds.
+ */
 interface VTPConfig {
-  id?: string;       // URL-safe identifier (auto-generated from name if omitted)
-  name: string;      // Display name (required)
+  name: string;
+  id?: string;
   description?: string;
-  type: 'static' | 'node';
-  path: string;      // folder to deploy
-  entry?: string;
-  start?: string;
-  port?: number;
-  env?: Record<string, string>;
-  predeploy?: string | string[];  // commands to run before packaging
-  ignore?: string[];  // gitignore-style patterns to exclude from deployment
+  framework?: string;
+  build?: {
+    command?: string;
+    output?: string;
+    node_version?: number;
+  };
+  start?: {
+    command?: string;
+    port?: number;
+  };
+  env?: string[];
+  build_env?: string[];
+  connections?: string[];
+  volumes?: Record<string, string>;
+  ignore?: string[];
 }
 
 // =============================================================================
@@ -432,6 +443,14 @@ export async function getDeploymentGuide(type: string): Promise<DeploymentGuide>
 }
 
 /**
+ * Get the deployment workflow guide.
+ */
+export async function getWorkflow(): Promise<string> {
+  const response = await apiRequest<DeploymentGuide>('GET', '/guides/workflow');
+  return response.content;
+}
+
+/**
  * Create a tar.gz archive of a directory.
  * Copies the config file (vtp.yaml) into the archive.
  * Respects .gitignore, vtp.yaml ignore patterns, and filters out sensitive files.
@@ -485,8 +504,14 @@ async function createTarGz(
 }
 
 /**
+ * Legacy v1 config fields that are no longer supported.
+ */
+const LEGACY_V1_FIELDS = ['type', 'path', 'predeploy'] as const;
+
+/**
  * Deploy an app from a local directory.
- * Reads vtp.yaml for all config including deploy path, creates tar.gz archive, and POSTs to the API.
+ * Reads vtp.yaml for all config, creates tar.gz archive, and POSTs to the API.
+ * Builds happen server-side - only v2 schema is supported.
  */
 export async function deploy(
   configPath: string = './vtp.yaml',
@@ -494,34 +519,30 @@ export async function deploy(
 ): Promise<DeployResult> {
   // Read and parse vtp.yaml
   const yamlContent = await readFile(configPath, 'utf-8');
-  const config = parseYaml(yamlContent) as VTPConfig;
+  const config = parseYaml(yamlContent) as VTPConfig & Record<string, unknown>;
 
   // Validate required fields
   if (!config.name) {
     throw new Error('vtp.yaml: "name" is required');
   }
-  if (!config.type) {
-    throw new Error('vtp.yaml: "type" is required (static or node)');
-  }
-  if (!config.path) {
-    throw new Error('vtp.yaml: "path" is required (folder to deploy)');
+
+  // Reject legacy v1 config fields with helpful migration message
+  const legacyFields = LEGACY_V1_FIELDS.filter(field => field in config);
+  if (legacyFields.length > 0) {
+    throw new Error(
+      `vtp.yaml uses deprecated fields: ${legacyFields.join(', ')}. ` +
+      `Migrate to v2 schema: remove 'type' and 'path' (auto-detected), ` +
+      `remove 'predeploy' (builds happen server-side). ` +
+      `See get_deployment_guide for examples.`
+    );
   }
 
   // Resolve path relative to vtp.yaml location
   const configDir = dirname(resolve(configPath));
 
-  // Run predeploy commands if specified
-  if (config.predeploy) {
-    const commands = Array.isArray(config.predeploy)
-      ? config.predeploy
-      : [config.predeploy];
-
-    for (const cmd of commands) {
-      await execAsync(cmd, { cwd: configDir });
-    }
-  }
-
-  const sourcePath = resolve(configDir, config.path);
+  // v2 schema - source root is the config directory
+  // No predeploy - builds happen server-side
+  const sourcePath = configDir;
 
   if (!existsSync(sourcePath)) {
     throw new Error(`Deploy path does not exist: ${sourcePath}`);
@@ -531,7 +552,7 @@ export async function deploy(
   const tarPath = await createTarGz(sourcePath, configPath, config.ignore);
 
   try {
-    return await postDeploy(tarPath, config.name, config.type, force);
+    return await postDeploy(tarPath, config.name, force);
   } finally {
     // Clean up temp tar file
     await unlink(tarPath).catch(() => {});
@@ -541,11 +562,11 @@ export async function deploy(
 /**
  * POST to the /deploy endpoint with tar.gz archive.
  * Uses form-data's submit() method for proper streaming support.
+ * Type is auto-detected server-side from the uploaded files.
  */
 async function postDeploy(
   tarPath: string,
   name: string,
-  type: string,
   force: boolean,
   retried: boolean = false
 ): Promise<DeployResult> {
@@ -559,7 +580,6 @@ async function postDeploy(
       contentType: 'application/gzip',
     });
     form.append('name', name);
-    form.append('type', type);
     form.append('force', String(force));
 
     // Parse API_BASE URL
@@ -592,7 +612,7 @@ async function postDeploy(
         // Handle 401 - try re-auth once
         if (res.statusCode === 401 && !retried) {
           deleteCredentials()
-            .then(() => postDeploy(tarPath, name, type, force, true))
+            .then(() => postDeploy(tarPath, name, force, true))
             .then(resolve)
             .catch(reject);
           return;
@@ -628,10 +648,166 @@ export async function listConnectionServices(): Promise<ConnectionService[]> {
 }
 
 /**
+ * Get the deployment config for an existing app.
+ * Returns null if not found or error.
+ */
+export async function getAppConfig(appId: string): Promise<VTPConfig | null> {
+  try {
+    const response = await apiRequest<{ config: VTPConfig }>('GET', `/apps/${encodeURIComponent(appId)}/config`);
+    return response.config;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Get container logs for a deployed app.
  */
 export async function getAppLogs(appId: string, lines?: number): Promise<string> {
   const params = lines ? `?lines=${lines}` : '';
   const response = await apiRequest<{ logs: string }>('GET', `/apps/${encodeURIComponent(appId)}/logs${params}`);
   return response.logs;
+}
+
+/**
+ * Framework detection result from the API.
+ */
+export interface DetectionResult {
+  framework: string;
+  confidence: 'high' | 'medium' | 'low';
+  mode?: string;
+  packageManager: 'npm' | 'yarn' | 'pnpm' | 'bun';
+  nodeVersion?: number;
+  buildCommand?: string;
+  outputDir?: string;
+  startCommand?: string;
+  defaultPort?: number;
+  warnings?: string[];
+}
+
+export interface ValidationResult {
+  valid: boolean;
+  errors: Array<{ code: string; message: string; file?: string; suggestion?: string }>;
+  warnings: Array<{ code: string; message: string; suggestion?: string }>;
+}
+
+export interface FrameworkDetectionResponse {
+  detection: DetectionResult;
+  validation: ValidationResult;
+  vtpConfig: Record<string, unknown> | null;
+  buildConfig: Record<string, unknown>;
+}
+
+/**
+ * Detect framework from a local directory.
+ * Uploads the source files to the API for server-side detection.
+ */
+export async function detectFramework(
+  sourcePath: string = '.',
+  ignorePatterns?: string[]
+): Promise<FrameworkDetectionResponse> {
+  const resolvedPath = resolve(sourcePath);
+
+  if (!existsSync(resolvedPath)) {
+    throw new Error(`Path does not exist: ${resolvedPath}`);
+  }
+
+  // Create tar.gz of the directory with source files
+  const tarPath = join(tmpdir(), `vtp-detect-${Date.now()}.tar.gz`);
+
+  try {
+    // Get filtered list of files (excluding build outputs, node_modules, etc.)
+    const filesToInclude = await getFilesToInclude(resolvedPath, ignorePatterns);
+
+    // Create tar.gz archive with only the filtered files
+    await tar.create(
+      {
+        gzip: true,
+        file: tarPath,
+        cwd: resolvedPath,
+      },
+      filesToInclude
+    );
+
+    // POST to /detect endpoint
+    return await postDetect(tarPath);
+  } finally {
+    // Clean up temp tar file
+    await unlink(tarPath).catch(() => {});
+  }
+}
+
+/**
+ * POST to the /detect endpoint with tar.gz archive.
+ */
+async function postDetect(
+  tarPath: string,
+  retried: boolean = false
+): Promise<FrameworkDetectionResponse> {
+  const accessToken = await ensureAuthenticated();
+
+  return new Promise((resolve, reject) => {
+    const form = new FormData();
+    form.append('archive', createReadStream(tarPath), {
+      filename: 'source.tar.gz',
+      contentType: 'application/gzip',
+    });
+
+    const url = new URL(`${API_BASE}/detect`);
+
+    form.submit(
+      {
+        host: url.hostname,
+        port: url.port || (url.protocol === 'https:' ? 443 : 80),
+        path: url.pathname,
+        protocol: url.protocol as 'http:' | 'https:',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      },
+      (err, res) => {
+        if (err) {
+          if (err.message.includes('ECONNREFUSED')) {
+            reject(new Error(
+              `Cannot connect to VTP API at ${API_BASE}. ` +
+              `Make sure the API server is running (pnpm dev:api).`
+            ));
+            return;
+          }
+          reject(err);
+          return;
+        }
+
+        if (res.statusCode === 401 && !retried) {
+          deleteCredentials()
+            .then(() => postDetect(tarPath, true))
+            .then(resolve)
+            .catch(reject);
+          return;
+        }
+        if (res.statusCode === 401) {
+          reject(new Error('Authentication failed. Please check your credentials.'));
+          return;
+        }
+
+        let body = '';
+        res.on('data', (chunk) => {
+          body += chunk;
+        });
+        res.on('end', () => {
+          try {
+            const data = JSON.parse(body);
+            if (res.statusCode !== 200) {
+              reject(new Error(data.message || data.error || `HTTP ${res.statusCode}`));
+              return;
+            }
+            resolve(data);
+          } catch {
+            reject(new Error(`Invalid JSON response: ${body}`));
+          }
+        });
+        res.on('error', reject);
+      }
+    );
+  });
 }
