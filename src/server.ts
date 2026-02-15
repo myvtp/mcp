@@ -11,7 +11,7 @@ import {
 import { existsSync } from 'fs';
 
 import * as client from './client.js';
-import { DeploySchema, GetLogsSchema, GetAppConfigSchema, GuideTypeSchema, DetectFrameworkSchema, toolDefinitions } from './tools.js';
+import { DeploySchema, GetLogsSchema, GetAppConfigSchema, GetDeployStatusSchema, GuideTypeSchema, DetectFrameworkSchema, toolDefinitions } from './tools.js';
 
 const server = new Server(
   {
@@ -143,13 +143,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           };
         }
 
-        // Success
+        // Success — deploy started asynchronously
         const app = result.app!;
-        const prefix = result.replaced ? 'Replaced' : 'Deployed';
-        let responseText = `${prefix} ${app.name} (@${app.id})\n` +
-                           `  URL: ${app.url}\n` +
+        const action = result.replaced ? 'Redeploy' : 'Deploy';
+        let responseText = `${action} started for ${app.name} (@${app.id})\n` +
+                           `  URL: ${app.url} (available once build completes)\n` +
                            `  Type: ${app.type}\n` +
-                           `  Status: ${app.status}`;
+                           `  Status: ${app.status}\n\n` +
+                           `The app is building server-side. Use get_deploy_status with app_id "${app.id}" to check progress.`;
 
         // Include warning if app wasn't started due to missing connections
         if (result.warning) {
@@ -288,6 +289,54 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [{
             type: 'text',
             text: `Logs for ${app_id}:\n\n${logs}`,
+          }],
+        };
+      }
+
+      case 'get_deploy_status': {
+        const { app_id } = GetDeployStatusSchema.parse(args);
+        const statusResult = await client.getAppStatus(app_id);
+        const statusApp = statusResult.app;
+
+        let statusText: string;
+
+        switch (statusApp.status) {
+          case 'deploying':
+          case 'building': {
+            statusText = `App "${statusApp.name}" (@${statusApp.id}) is building...\n` +
+                         `  Status: ${statusApp.status}\n` +
+                         `  URL: ${statusApp.url} (will be available once build completes)`;
+            if (statusResult.logs) {
+              statusText += `\n\nRecent build output:\n${statusResult.logs}`;
+            }
+            statusText += `\n\nCheck again in 30 seconds.`;
+            break;
+          }
+          case 'running': {
+            statusText = `App "${statusApp.name}" (@${statusApp.id}) is running and healthy!\n` +
+                         `  Status: running\n` +
+                         `  URL: ${statusApp.url}`;
+            break;
+          }
+          case 'error':
+          case 'stopped': {
+            statusText = `App "${statusApp.name}" (@${statusApp.id}) has issues.\n` +
+                         `  Status: ${statusApp.status}\n` +
+                         `  URL: ${statusApp.url}\n\n` +
+                         `Use get_logs with app_id "${statusApp.id}" to see error details.`;
+            break;
+          }
+          default: {
+            statusText = `App "${statusApp.name}" (@${statusApp.id})\n` +
+                         `  Status: ${statusApp.status}\n` +
+                         `  URL: ${statusApp.url}`;
+          }
+        }
+
+        return {
+          content: [{
+            type: 'text',
+            text: statusText,
           }],
         };
       }

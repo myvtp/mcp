@@ -670,6 +670,24 @@ export async function getAppLogs(appId: string, lines?: number): Promise<string>
 }
 
 /**
+ * Get the current status of an app, including logs if still deploying/building.
+ */
+export async function getAppStatus(appId: string): Promise<{ app: App; logs?: string }> {
+  const app = await apiRequest<App>('GET', `/apps/${encodeURIComponent(appId)}`);
+  // If still deploying/building, also fetch recent logs for progress info
+  if (app.status === 'deploying' || app.status === 'building') {
+    try {
+      const logsResp = await apiRequest<{ logs: string }>('GET', `/apps/${encodeURIComponent(appId)}/logs?lines=20`);
+      return { app, logs: logsResp.logs };
+    } catch {
+      // Logs may not be available yet if container hasn't started
+      return { app };
+    }
+  }
+  return { app };
+}
+
+/**
  * Framework detection result from the API.
  */
 export interface DetectionResult {

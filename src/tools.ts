@@ -19,6 +19,10 @@ export const GetAppConfigSchema = z.object({
   app_id: z.string().describe('The app ID (use "list" to see deployed apps)'),
 });
 
+export const GetDeployStatusSchema = z.object({
+  app_id: z.string().describe('The app ID to check deployment status for'),
+});
+
 export const DetectFrameworkSchema = z.object({
   path: z.string().optional().describe('Path to the project directory (default: current directory)'),
 });
@@ -64,6 +68,10 @@ Call this before deploying to get framework-specific configuration guidance.`,
   {
     name: 'deploy',
     description: `Deploy a web app to VTP.
+
+Deployment happens asynchronously - this tool returns immediately and the app builds server-side. Use get_deploy_status to monitor build progress.
+
+For redeploying, the previous version stays live until the new build completes (zero-downtime blue-green deployment).
 
 Prerequisites:
 1. Call get_deployment_guide first
@@ -122,6 +130,19 @@ Use this to debug startup failures, runtime errors, or connection issues.`,
       properties: {
         app_id: { type: 'string', description: 'The app ID (use "list" to see deployed apps)' },
         lines: { type: 'number', description: 'Number of log lines to retrieve (default: 100, max: 1000)' },
+      },
+      required: ['app_id'],
+    },
+  },
+  {
+    name: 'get_deploy_status',
+    description: `Check the current deployment status of an app.
+
+Use this after deploying to monitor build progress. Returns the app's current status (deploying, building, running, error, etc.) and container logs if building/deploying.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        app_id: { type: 'string', description: 'The app ID to check deployment status for' },
       },
       required: ['app_id'],
     },
