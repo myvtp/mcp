@@ -7,7 +7,7 @@ export const DeploySchema = z.object({
 });
 
 export const GuideTypeSchema = z.object({
-  type: z.string().describe('App type from list_app_types (e.g., "nextjs", "spa", "node")'),
+  type: z.string().describe('App type from list_app_types (e.g., "node", "static", "multi-tenancy")'),
 });
 
 export const GetLogsSchema = z.object({
@@ -42,7 +42,7 @@ export const toolDefinitions = [
     name: 'how_to_deploy',
     description: `Get the deployment workflow for VTP.
 
-Call this FIRST when deploying an app. VTP is designed for AI agents to handle deployments - the user should not need to understand DevOps. This tool explains the required steps to ensure successful deployment.`,
+Call this FIRST when deploying an app. You are responsible for analysing the user's code, fixing deployment issues (host binding, port configuration, lockfile generation, framework settings), and ensuring a successful deployment. Always inform the user of changes you make. This tool provides infrastructure details, vtp.yaml reference, and the agent's responsibilities.`,
     inputSchema: {
       type: 'object',
       properties: {},
@@ -52,7 +52,7 @@ Call this FIRST when deploying an app. VTP is designed for AI agents to handle d
     name: 'list_app_types',
     description: `List supported app types for deployment.
 
-Use this to see what frameworks VTP supports (Next.js, SvelteKit, Remix, Astro, Nuxt, Vite, Node.js, static).`,
+Use this to see what frameworks VTP supports (Node.js, static).`,
     inputSchema: {
       type: 'object',
       properties: {},
@@ -60,7 +60,7 @@ Use this to see what frameworks VTP supports (Next.js, SvelteKit, Remix, Astro, 
   },
   {
     name: 'get_deployment_guide',
-    description: `Get the vtp.yaml template and deployment instructions for an app type.
+    description: `Get framework-specific deployment configuration and notes.
 
 Call this before deploying to get framework-specific configuration guidance.`,
     inputSchema: {
@@ -68,7 +68,7 @@ Call this before deploying to get framework-specific configuration guidance.`,
       properties: {
         type: {
           type: 'string',
-          description: 'App type from list_app_types (e.g., "nextjs", "spa", "node")',
+          description: 'App type from list_app_types (e.g., "node", "static", "multi-tenancy")',
         },
       },
       required: ['type'],
@@ -78,17 +78,21 @@ Call this before deploying to get framework-specific configuration guidance.`,
     name: 'deploy',
     description: `Deploy a web app to VTP.
 
+WARNING: Deployment is a production action. Redeployment replaces the running app. Ensure the code is correct and the configuration preserves existing connections and volumes before deploying.
+
 Deployment happens asynchronously - this tool returns immediately and the app builds server-side. Use get_deploy_status to monitor build progress.
 
 For redeploying, the previous version stays live until the new build completes (zero-downtime blue-green deployment).
 
 Prerequisites:
-1. Call get_deployment_guide first
-2. Call list to check if app already exists (redeploy needs force: true)
+1. Call detect_framework first and fix any validation errors or warnings
+2. Call get_deployment_guide for framework-specific configuration
+3. Run the build locally (e.g. npm run build) and fix any errors — never deploy code that has not built successfully
+4. Create a vtp.md file in the project root (alongside vtp.yaml). This becomes the app's readme in the marketplace. Write it for non-technical users: explain what the app does, why someone would want it, and how to use it. No framework names, technical jargon, or setup instructions — just the value proposition and user-facing features. If vtp.md already exists, review and update it if the app has changed.
+5. Call list to check if app already exists (redeploy needs force: true)
+6. If redeploying, call get_app_config to preserve existing connections and volumes
 
-VTP auto-detects frameworks and builds server-side. Often just \`name: My App\` in vtp.yaml is enough.
-
-If a vtp.md file exists in the project root, its contents are automatically extracted as the app's readme.`,
+VTP auto-detects frameworks and builds server-side. Often just \`name: My App\` in vtp.yaml is enough.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -125,7 +129,7 @@ Use this when redeploying an app that exists but has no local vtp.yaml - retriev
     name: 'list_supported_connections',
     description: `List available third-party API connections (OpenAI, Anthropic, etc.).
 
-Use this if your app needs API keys - connections inject credentials automatically at runtime.`,
+Call this during code analysis if the app imports any third-party SDK or references API keys. Cross-reference the app's package.json dependencies against available services. Connections inject encrypted credentials as environment variables at runtime — the user configures keys once in their VTP dashboard and reuses them across apps.`,
     inputSchema: {
       type: 'object',
       properties: {},
@@ -162,7 +166,7 @@ Use this after deploying to monitor build progress. Returns the app's current st
     name: 'detect_framework',
     description: `Detect the framework and optimal deployment configuration for a project.
 
-Use this to see what VTP will auto-detect before deploying.`,
+Use this to validate the project before deploying. If the project is inside a monorepo (NO_LOCKFILE warning, workspace: dependencies), inform the user that monorepo apps are not supported and the app must be extracted to a standalone project first.`,
     inputSchema: {
       type: 'object',
       properties: {

@@ -13,6 +13,11 @@ const ALWAYS_IGNORED = [
   '.env.local',
   '.env.*.local',
 
+  // Database files - local dev data must not be deployed to production
+  '*.db',
+  '*.sqlite',
+  '*.sqlite3',
+
   // Version control - never needed in deployment
   '.git',
 

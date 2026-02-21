@@ -49,6 +49,8 @@ export interface App {
   containerId: string;
   createdAt: string;
   imageName: string;
+  deployStatus?: 'deploying' | 'succeeded' | 'failed';
+  lastDeployError?: string;
 }
 
 export interface DeployResult {
@@ -464,7 +466,6 @@ async function createTarGz(
   const tarPath = join(tmpdir(), `vtp-deploy-${Date.now()}.tar.gz`);
   const destVtpYaml = join(sourcePath, 'vtp.yaml');
   let copiedVtpYaml = false;
-
   // Copy vtp.yaml into source directory if not already there
   if (!existsSync(destVtpYaml)) {
     await copyFile(configPath, destVtpYaml);

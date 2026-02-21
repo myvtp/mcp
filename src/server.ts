@@ -22,12 +22,20 @@ const server = new Server(
     capabilities: {
       tools: {},
     },
-    instructions: `VTP (Vibe Transfer Protocol) is a personal app hosting platform designed for AI agents to deploy web apps on behalf of users.
+    instructions: `VTP (Vibe Transfer Protocol) is a personal app hosting platform designed for AI agents to deploy web apps on behalf of users. Apps deploy as Docker containers accessible at {id}-{user}.myvtp.app.
 
 YOUR RESPONSIBILITY AS THE AGENT:
-You orchestrate the deployment process. The end user should not need to understand DevOps, infrastructure, or deployment details - that complexity is your job to handle.
+You orchestrate the deployment process. The end user should not need to understand DevOps, infrastructure, or deployment details — that complexity is your job to handle. You must analyse the codebase, fix deployment blockers (host binding, port config, framework settings, missing lockfiles), and be confident the app will work before deploying. Always inform the user what you changed and why.
 
-IMPORTANT: Call the \`how_to_deploy\` tool to get the deployment workflow before deploying any app. Never guess or assume configuration - use the tools to get accurate, current information.`,
+Every deployment is production — if the new version is broken, the app goes down. If volumes are misconfigured or removed, persistent data is gone permanently. Be confident, not hopeful. If you're unsure, investigate first.
+
+Before deploying, run the app's build command locally (e.g. npm run build) and fix any errors. A passing local build is the minimum bar for confidence — never deploy code that does not build.
+
+Monorepo/workspace projects are not currently supported. The app must be a standalone project with its own package.json and lockfile. If the user's app is inside a monorepo, it must be extracted into a standalone directory before deploying.
+
+Unconfigured connections inject empty-string env vars — the app starts immediately and will error if it uses empty API keys without checking. When redeploying, always retrieve the existing config with \`get_app_config\` to preserve connections and volumes.
+
+IMPORTANT: Call \`how_to_deploy\` to get the deployment workflow before deploying any app. Never guess or assume configuration — use the tools to get accurate, current information. Call \`detect_framework\` to validate the project. Call \`get_deployment_guide\` for framework-specific notes. If deployment fails, read logs with \`get_logs\`, fix the issue, and redeploy with \`force: true\`.`,
   }
 );
 
@@ -74,10 +82,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         try {
           const guide = await client.getDeploymentGuide(guideType);
           const vtpMdSection = `\n\n## App Documentation (vtp.md)\n\n` +
-            `Optionally, create a \`vtp.md\` file in your project root (alongside vtp.yaml). ` +
-            `This markdown file is automatically extracted during deployment and used as your app's readme. ` +
-            `It appears in marketplace discovery and app documentation.\n\n` +
-            `You can also update the readme after deployment using the \`update_app_readme\` tool.`;
+            `Create a \`vtp.md\` file in the project root (alongside vtp.yaml) before deploying. ` +
+            `This becomes the app's readme in the marketplace — write it for non-technical users. ` +
+            `Explain what the app does, why someone would want it, and how to use it. ` +
+            `Avoid framework names, technical jargon, or developer setup steps.\n\n` +
+            `You can update the readme after deployment using the \`update_app_readme\` tool.`;
           return {
             content: [{
               type: 'text',
@@ -272,7 +281,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                   `  - anthropic\n` +
                   `\`\`\`\n\n` +
                   `The user must configure API keys at their VTP dashboard before deploying.\n` +
-                  `Environment variables are injected as: {PREFIX}_{FIELD} (e.g., OPENAI_API_KEY)`,
+                  `Environment variables are injected as: {PREFIX}_{FIELD} (e.g., OPENAI_API_KEY)\n\n` +
+                  `**If not yet configured:** The app starts with empty-string env vars. Ensure the code handles missing keys gracefully (check for empty strings before using API clients). When the user configures the connection, the container is automatically recreated with real credentials.`,
           }],
         };
       }
@@ -305,36 +315,44 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         let statusText: string;
 
-        switch (statusApp.status) {
-          case 'deploying':
-          case 'building': {
-            statusText = `App "${statusApp.name}" (@${statusApp.id}) is building...\n` +
-                         `  Status: ${statusApp.status}\n` +
-                         `  URL: ${statusApp.url} (will be available once build completes)`;
-            if (statusResult.logs) {
-              statusText += `\n\nRecent build output:\n${statusResult.logs}`;
+        // If the most recent deploy failed, report it regardless of current container status.
+        // The old version may still be running (rollback), so status='running' is misleading.
+        if (statusApp.deployStatus === 'failed') {
+          const errDetail = statusApp.lastDeployError
+            ? `\n  Error: ${statusApp.lastDeployError}`
+            : '';
+          statusText = `Deploy failed for "${statusApp.name}" (@${statusApp.id}).${errDetail}\n\n` +
+                       `The previous version is still running at ${statusApp.url}\n\n` +
+                       `Use get_logs with app_id "${statusApp.id}" to see more details.`;
+        } else if (statusApp.deployStatus === 'deploying' || statusApp.status === 'deploying' || statusApp.status === 'building') {
+          statusText = `App "${statusApp.name}" (@${statusApp.id}) is building...\n` +
+                       `  Status: ${statusApp.status}\n` +
+                       `  URL: ${statusApp.url} (will be available once build completes)`;
+          if (statusResult.logs) {
+            statusText += `\n\nRecent build output:\n${statusResult.logs}`;
+          }
+          statusText += `\n\nCheck again in 30 seconds.`;
+        } else {
+          switch (statusApp.status) {
+            case 'running': {
+              statusText = `App "${statusApp.name}" (@${statusApp.id}) is running and healthy!\n` +
+                           `  Status: running\n` +
+                           `  URL: ${statusApp.url}`;
+              break;
             }
-            statusText += `\n\nCheck again in 30 seconds.`;
-            break;
-          }
-          case 'running': {
-            statusText = `App "${statusApp.name}" (@${statusApp.id}) is running and healthy!\n` +
-                         `  Status: running\n` +
-                         `  URL: ${statusApp.url}`;
-            break;
-          }
-          case 'error':
-          case 'stopped': {
-            statusText = `App "${statusApp.name}" (@${statusApp.id}) has issues.\n` +
-                         `  Status: ${statusApp.status}\n` +
-                         `  URL: ${statusApp.url}\n\n` +
-                         `Use get_logs with app_id "${statusApp.id}" to see error details.`;
-            break;
-          }
-          default: {
-            statusText = `App "${statusApp.name}" (@${statusApp.id})\n` +
-                         `  Status: ${statusApp.status}\n` +
-                         `  URL: ${statusApp.url}`;
+            case 'error':
+            case 'stopped': {
+              statusText = `App "${statusApp.name}" (@${statusApp.id}) has issues.\n` +
+                           `  Status: ${statusApp.status}\n` +
+                           `  URL: ${statusApp.url}\n\n` +
+                           `Use get_logs with app_id "${statusApp.id}" to see error details.`;
+              break;
+            }
+            default: {
+              statusText = `App "${statusApp.name}" (@${statusApp.id})\n` +
+                           `  Status: ${statusApp.status}\n` +
+                           `  URL: ${statusApp.url}`;
+            }
           }
         }
 
