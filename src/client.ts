@@ -357,7 +357,7 @@ async function ensureAuthenticated(): Promise<string> {
  * Generic HTTP request helper with authentication and connection error handling.
  */
 async function apiRequest<T>(
-  method: 'GET' | 'POST' | 'DELETE',
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
   path: string,
   body?: unknown,
   retried: boolean = false
@@ -685,6 +685,21 @@ export async function getAppStatus(appId: string): Promise<{ app: App; logs?: st
     }
   }
   return { app };
+}
+
+/**
+ * Get the readme/documentation for a deployed app.
+ */
+export async function getAppReadme(appId: string): Promise<string | null> {
+  const response = await apiRequest<{ readme: string | null }>('GET', `/apps/${encodeURIComponent(appId)}/readme`);
+  return response.readme;
+}
+
+/**
+ * Update the readme/documentation for a deployed app.
+ */
+export async function updateAppReadme(appId: string, content: string): Promise<void> {
+  await apiRequest<{ success: boolean }>('PUT', `/apps/${encodeURIComponent(appId)}/readme`, { readme: content });
 }
 
 /**

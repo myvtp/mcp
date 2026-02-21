@@ -23,6 +23,15 @@ export const GetDeployStatusSchema = z.object({
   app_id: z.string().describe('The app ID to check deployment status for'),
 });
 
+export const GetAppReadmeSchema = z.object({
+  app_id: z.string().describe('The app ID (use "list" to see deployed apps)'),
+});
+
+export const UpdateAppReadmeSchema = z.object({
+  app_id: z.string().describe('The app ID (use "list" to see deployed apps)'),
+  content: z.string().describe('Markdown content for the app readme'),
+});
+
 export const DetectFrameworkSchema = z.object({
   path: z.string().optional().describe('Path to the project directory (default: current directory)'),
 });
@@ -77,7 +86,9 @@ Prerequisites:
 1. Call get_deployment_guide first
 2. Call list to check if app already exists (redeploy needs force: true)
 
-VTP auto-detects frameworks and builds server-side. Often just \`name: My App\` in vtp.yaml is enough.`,
+VTP auto-detects frameworks and builds server-side. Often just \`name: My App\` in vtp.yaml is enough.
+
+If a vtp.md file exists in the project root, its contents are automatically extracted as the app's readme.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -158,6 +169,33 @@ Use this to see what VTP will auto-detect before deploying.`,
         path: { type: 'string', description: 'Path to the project directory (default: current directory)' },
       },
       required: [],
+    },
+  },
+  {
+    name: 'get_app_readme',
+    description: `Get the readme/documentation for a deployed app.
+
+Returns the app's markdown readme content, if one exists.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        app_id: { type: 'string', description: 'The app ID (use "list" to see deployed apps)' },
+      },
+      required: ['app_id'],
+    },
+  },
+  {
+    name: 'update_app_readme',
+    description: `Update the readme/documentation for a deployed app. Supports full markdown.
+
+Use this to set or update an app's documentation. Max 50KB.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        app_id: { type: 'string', description: 'The app ID (use "list" to see deployed apps)' },
+        content: { type: 'string', description: 'Markdown content for the app readme' },
+      },
+      required: ['app_id', 'content'],
     },
   },
 ];

@@ -11,7 +11,7 @@ import {
 import { existsSync } from 'fs';
 
 import * as client from './client.js';
-import { DeploySchema, GetLogsSchema, GetAppConfigSchema, GetDeployStatusSchema, GuideTypeSchema, DetectFrameworkSchema, toolDefinitions } from './tools.js';
+import { DeploySchema, GetLogsSchema, GetAppConfigSchema, GetDeployStatusSchema, GuideTypeSchema, DetectFrameworkSchema, GetAppReadmeSchema, UpdateAppReadmeSchema, toolDefinitions } from './tools.js';
 
 const server = new Server(
   {
@@ -73,10 +73,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         try {
           const guide = await client.getDeploymentGuide(guideType);
+          const vtpMdSection = `\n\n## App Documentation (vtp.md)\n\n` +
+            `Optionally, create a \`vtp.md\` file in your project root (alongside vtp.yaml). ` +
+            `This markdown file is automatically extracted during deployment and used as your app's readme. ` +
+            `It appears in marketplace discovery and app documentation.\n\n` +
+            `You can also update the readme after deployment using the \`update_app_readme\` tool.`;
           return {
             content: [{
               type: 'text',
-              text: guide.content,
+              text: guide.content + vtpMdSection,
             }],
           };
         } catch (error) {
@@ -428,6 +433,39 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [{
             type: 'text',
             text: responseText,
+          }],
+        };
+      }
+
+      case 'get_app_readme': {
+        const { app_id } = GetAppReadmeSchema.parse(args);
+        const readme = await client.getAppReadme(app_id);
+
+        if (!readme) {
+          return {
+            content: [{
+              type: 'text',
+              text: `No readme found for app '${app_id}'. You can add one using update_app_readme or by including a vtp.md file in the project root.`,
+            }],
+          };
+        }
+
+        return {
+          content: [{
+            type: 'text',
+            text: readme,
+          }],
+        };
+      }
+
+      case 'update_app_readme': {
+        const { app_id, content } = UpdateAppReadmeSchema.parse(args);
+        await client.updateAppReadme(app_id, content);
+
+        return {
+          content: [{
+            type: 'text',
+            text: `Readme updated for app '${app_id}'.`,
           }],
         };
       }
